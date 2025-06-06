@@ -16,4 +16,4 @@ jobs:
       - name: Run patch-courier script
         run: |
           chmod +x patch-courier
-          patch-courier
+          ./patch-courier
