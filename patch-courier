@@ -81,7 +81,7 @@ function collect_commits() {
 
 function filter() {
 	while IFS=$'\t' read -r commit referenced_commit referenced_title; do
-		if git -C workdir/kernels/my branch --contains "$commit"; then
+		if git -C workdir/kernels/my branch --contains "$commit" >/dev/null 2>&1; then
 			continue
 		fi
 
