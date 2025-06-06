@@ -13,7 +13,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Cache workdir
+        uses: actions/cache@v4
+        with:
+          path: workdir
+          key: always-cache-workdir
+
       - name: Run patch-courier script
         run: |
           chmod +x patch-courier
           ./patch-courier
+
+      - name: Save workdir cache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: workdir
+          key: always-cache-workdir
