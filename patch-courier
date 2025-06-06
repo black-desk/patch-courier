@@ -50,7 +50,7 @@ function setup_kernel_git_repository() {
 	shift
 
 	if ! [ -d "$dir" ]; then
-		git clone -v "$url" "$dir"
+		git clone --progress "$url" "$dir"
 		return
 	fi
 
