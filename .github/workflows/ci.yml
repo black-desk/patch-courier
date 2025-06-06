@@ -1,0 +1,19 @@
+name: Patch Courier CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  run-patch-courier:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run patch-courier script
+        run: |
+          chmod +x patch-courier
+          patch-courier

@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# NOTE:
+# Use /usr/bin/env to find shell interpreter for better portability.
+# Reference: https://en.wikipedia.org/wiki/Shebang_%28Unix%29#Portability
+
+# NOTE:
+# Exit immediately if any commands (even in pipeline)
+# exits with a non-zero status.
+set -e
+set -o pipefail
+
+# WARNING:
+# This is not reliable when using POSIX sh
+# and current script file is sourced by `source` or `.`
+CURRENT_SOURCE_FILE_PATH="${BASH_SOURCE[0]:-$0}"
+CURRENT_SOURCE_FILE_NAME="$(basename -- "$CURRENT_SOURCE_FILE_PATH")"
+
+# shellcheck disable=SC2016
+USAGE="$CURRENT_SOURCE_FILE_NAME"'
+
+Description of your script goes HERE.
+
+'"
+Usage:
+  $CURRENT_SOURCE_FILE_NAME -h
+  $CURRENT_SOURCE_FILE_NAME
+
+Options:
+  -h	Show this screen."
+
+CURRENT_SOURCE_FILE_DIR="$(dirname -- "$CURRENT_SOURCE_FILE_PATH")"
+cd -- "$CURRENT_SOURCE_FILE_DIR"
+
+# This function log messages to stderr works like printf
+# with a prefix of the current script name.
+# Arguments:
+#   $1 - The format string.
+#   $@ - Arguments to the format string, just like printf.
+function log() {
+	local format="$1"
+	shift
+	# shellcheck disable=SC2059
+	printf "$CURRENT_SOURCE_FILE_NAME: $format\n" "$@" >&2 || true
+}
+
+function setup_kernel_git_repository() {
+	local url="$1"
+	shift
+	local dir="$1"
+	shift
+
+	if ! [ -d "$dir" ]; then
+		git clone "$url" "$dir"
+		return
+	fi
+
+	log "[WARNING] Updating existing kernel repository: %s" "$dir"
+	git -C "$dir" remote set-url origin "$url"
+	git -C "$dir" fetch origin
+	git -C "$dir" reset --hard origin/HEAD
+	git -C "$dir" clean -fdx
+}
+
+function collect_commits() {
+	local current_commit
+	local buffer
+	while IFS= read -r line; do
+		if ! [[ "$line" =~ ^commit.* ]]; then
+			buffer+=" ${line#"    "}"
+			continue
+		fi
+
+		if [[ "$buffer" =~ ([a-z0-9]{12,15})\ \(\"([^\"]*)\"\) ]]; then
+			printf "%s\t%s\t%s\n" "$current_commit" "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+		fi
+
+		current_commit="${line#commit }"
+		buffer=""
+	done
+}
+
+function filter() {
+	while IFS=$'\t' read -r commit referenced_commit referenced_title; do
+		if git -C workdir/kernels/my branch --contains "$commit"; then
+			continue
+		fi
+
+		local commit_title
+		commit_title="$(git -C workdir/kernels/upstream show "$commit" --pretty=format:%s)"
+
+		if git -C workdir/kernels/my log --grep "$commit" --grep "$commit_title" --max-count=1 >/dev/null; then
+			continue
+		fi
+
+		if ! git -C workdir/kernels/my log --grep "$referenced_title" --max-count=1 >/dev/null; then
+			continue
+		fi
+
+		echo "$commit" "$referenced_commit" "$referenced_title"
+	done
+}
+
+function main() {
+	while getopts ':h' option; do
+		case "$option" in
+		h)
+			echo "$USAGE"
+			exit
+			;;
+		\?)
+			log "[ERROR] Unknown option: -%s" "$OPTARG"
+			exit 1
+			;;
+		esac
+	done
+	shift $((OPTIND - 1))
+
+	GH=${GH:-gh}
+	if ! command -v "$GH" &>/dev/null; then
+		log "[ERROR] gh command not found. Please install GitHub CLI."
+		exit 1
+	fi
+
+	setup_kernel_git_repository \
+		https://github.com/deepin-community/kernel workdir/kernels/my
+	setup_kernel_git_repository \
+		https://github.com/gregkh/linux workdir/kernels/upstream
+
+	local commit_regex='\(^\| \)[a-z0-9]\{12\} (".*'
+	git -C workdir/kernels/upstream log --grep="$commit_regex" |
+		grep -e '^commit' -e "$commit_regex" -A 1 |
+		collect_commits |
+		filter
+}
+
+main "$@"
